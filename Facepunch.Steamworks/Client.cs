@@ -85,15 +85,15 @@ namespace Facepunch.Steamworks
             }
 
             //
-            // Setup interfaces that client and server both have
-            //
-            SetupCommonInterfaces();
-
-            //
             // Register Callbacks
             //
 
             SteamNative.Callbacks.RegisterCallbacks( this );
+
+            //
+            // Setup interfaces that client and server both have
+            //
+            SetupCommonInterfaces();
 
             //
             // Client only interfaces
@@ -135,6 +135,11 @@ namespace Facepunch.Steamworks
             Update();
         }
 
+        ~Client()
+        {
+            Dispose();
+        }
+
         /// <summary>
         /// Should be called at least once every frame
         /// </summary>
@@ -163,6 +168,8 @@ namespace Facepunch.Steamworks
         /// </summary>
         public override void Dispose()
         {
+            if ( disposed ) return;
+
             if ( Voice != null )
             {
                 Voice = null;

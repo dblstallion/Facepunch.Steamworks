@@ -40,6 +40,7 @@ namespace Facepunch.Steamworks
         {
             client = c;
 
+            client.RegisterCallback<AvatarImageLoaded_t>( OnAvatarImageLoaded );
             client.RegisterCallback<PersonaStateChange_t>( OnPersonaStateChange );
             client.RegisterCallback<GameRichPresenceJoinRequested_t>( OnGameJoinRequested );
             client.RegisterCallback<GameConnectedFriendChatMsg_t>( OnFriendChatMessage );
@@ -237,8 +238,9 @@ namespace Facepunch.Steamworks
                     break;
             }
 
-            if ( imageid >= 0 && imageid <= 10 )
-                return null;
+            if ( imageid == 1 ) return null; // Placeholder large
+            if ( imageid == 2 ) return null; // Placeholder medium
+            if ( imageid == 3 ) return null; // Placeholder small
 
             var img = new Image()
             {
@@ -315,7 +317,7 @@ namespace Facepunch.Steamworks
 
             var timeOut = DateTime.Now.AddSeconds( -10 );
 
-            for ( int i = 0; i < PersonaCallbacks.Count; i++ )
+            for ( int i = PersonaCallbacks.Count-1; i >= 0; i-- )
             {
                 var cb = PersonaCallbacks[i];
 
@@ -336,12 +338,29 @@ namespace Facepunch.Steamworks
         
         private void OnPersonaStateChange( PersonaStateChange_t data )
         {
-            if ( (data.ChangeFlags & 0x0040) != 0x0040 ) return; // wait for k_EPersonaChangeAvatar	
+            // k_EPersonaChangeAvatar	
+            if ( (data.ChangeFlags & 0x0040) == 0x0040 )
+            {
+                LoadAvatarForSteamId( data.SteamID );
+            }
 
-            for ( int i=0; i< PersonaCallbacks.Count; i++ )
+            //
+            // Find and refresh this friend's status
+            //
+            foreach ( var friend in All )
+            {
+                if ( friend.Id != data.SteamID ) continue;
+
+                friend.Refresh();
+            }
+        }
+
+        void LoadAvatarForSteamId( ulong Steamid )
+        {
+            for ( int i = PersonaCallbacks.Count - 1; i >= 0; i-- )
             {
                 var cb = PersonaCallbacks[i];
-                if ( cb.SteamId != data.SteamID ) continue;
+                if ( cb.SteamId != Steamid ) continue;
 
                 var image = GetCachedAvatar( cb.Size, cb.SteamId );
                 if ( image == null ) continue;
@@ -353,6 +372,11 @@ namespace Facepunch.Steamworks
                     cb.Callback( image );
                 }
             }
+        }
+
+        private void OnAvatarImageLoaded( AvatarImageLoaded_t data )
+        {
+            LoadAvatarForSteamId( data.SteamID );
         }
 
     }

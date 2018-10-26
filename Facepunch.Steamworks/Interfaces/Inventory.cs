@@ -37,31 +37,64 @@ namespace Facepunch.Steamworks
 
         internal SteamNative.SteamInventory inventory;
 
-        private Stopwatch fetchRetryTimer;
-
         private bool IsServer { get; set; }
+
+        public event Action OnDefinitionsUpdated;
 
         internal Inventory( BaseSteamworks steamworks, SteamNative.SteamInventory c, bool server )
         {
             IsServer = server;
             inventory = c;
 
+            steamworks.RegisterCallback<SteamNative.SteamInventoryDefinitionUpdate_t>( onDefinitionsUpdated );
+
             Result.Pending = new Dictionary<int, Result>();
 
-            inventory.LoadItemDefinitions();
             FetchItemDefinitions();
+            LoadDefinitions();
             UpdatePrices();
 
             if ( !server )
             {
                 steamworks.RegisterCallback<SteamNative.SteamInventoryResultReady_t>( onResultReady );
                 steamworks.RegisterCallback<SteamNative.SteamInventoryFullUpdate_t>( onFullUpdate );
+                
 
                 //
                 // Get a list of our items immediately
                 //
                 Refresh();
             }
+        }
+
+        /// <summary>
+        /// Should get called when the definitions get updated from Steam.
+        /// </summary>
+        private void onDefinitionsUpdated( SteamInventoryDefinitionUpdate_t obj )
+        {
+            LoadDefinitions();
+            UpdatePrices();
+
+            if ( OnDefinitionsUpdated != null )
+            {
+                OnDefinitionsUpdated.Invoke();
+            }
+        }
+
+        private bool LoadDefinitions()
+        {
+            var ids = inventory.GetItemDefinitionIDs();
+            if ( ids == null )
+                return false;
+
+            Definitions = ids.Select( x => CreateDefinition( x ) ).ToArray();
+
+            foreach ( var def in Definitions )
+            {
+                def.Link( Definitions );
+            }
+
+            return true;
         }
 
         /// <summary>
@@ -198,22 +231,12 @@ namespace Facepunch.Steamworks
             return new Definition( this, id );
         }
 
-        internal void FetchItemDefinitions()
+        /// <summary>
+        /// Fetch item definitions in case new ones have been added since we've initialized
+        /// </summary>
+        public void FetchItemDefinitions()
         {
-            //
-            // Make sure item definitions are loaded, because we're going to be using them.
-            //
-
-            var ids = inventory.GetItemDefinitionIDs();
-            if ( ids == null )
-                return;
-
-            Definitions = ids.Select( x => CreateDefinition( x ) ).ToArray();
-
-            foreach ( var def in Definitions )
-            {
-                def.Link( Definitions );
-            }
+            inventory.LoadItemDefinitions();
         }
 
         /// <summary>
@@ -221,25 +244,7 @@ namespace Facepunch.Steamworks
         /// </summary>
         public void Update()
         {
-            if ( Definitions == null )
-            {
-                //
-                // Don't try every frame, just try every 10 seconds.
-                //
-                {
-                    if ( fetchRetryTimer != null && fetchRetryTimer.Elapsed.TotalSeconds < 10.0f )
-                        return;
 
-                    if ( fetchRetryTimer == null )
-                        fetchRetryTimer = Stopwatch.StartNew();
-
-                    fetchRetryTimer.Reset();
-                    fetchRetryTimer.Start();
-                }
-
-                FetchItemDefinitions();
-                inventory.LoadItemDefinitions();
-            }
         }
 
         /// <summary>
@@ -255,7 +260,10 @@ namespace Facepunch.Steamworks
         {
             get
             {
-                for( int i=0; i< Definitions.Length; i++ )
+                if ( Definitions == null )
+                    yield break;
+
+                for ( int i=0; i< Definitions.Length; i++ )
                 {
                     if (Definitions[i].LocalPrice > 0)
                         yield return Definitions[i];
@@ -281,14 +289,19 @@ namespace Facepunch.Steamworks
         }
 
         /// <summary>
-        /// You really need me to explain what this does?
-        /// Use your brains.
+        /// We might be better off using a dictionary for this, once there's 1000+ definitions
         /// </summary>
         public Definition FindDefinition( int DefinitionId )
         {
             if ( Definitions == null ) return null;
 
-            return Definitions.FirstOrDefault( x => x.Id == DefinitionId );
+            for( int i=0; i< Definitions.Length; i++ )
+            {
+                if ( Definitions[i].Id == DefinitionId )
+                    return Definitions[i];
+            }
+
+            return null;
         }
 
         public unsafe Result Deserialize( byte[] data, int dataLength = -1 )

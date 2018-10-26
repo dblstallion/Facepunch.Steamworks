@@ -26,6 +26,7 @@ namespace Facepunch.Steamworks
 
         private List<SteamNative.CallbackHandle> CallbackHandles = new List<SteamNative.CallbackHandle>();
         private List<SteamNative.CallResult> CallResults = new List<SteamNative.CallResult>();
+        protected bool disposed = false;
 
 
         protected BaseSteamworks( uint appId )
@@ -39,8 +40,15 @@ namespace Facepunch.Steamworks
             System.Environment.SetEnvironmentVariable("SteamGameId", AppId.ToString());
         }
 
+        ~BaseSteamworks()
+        {
+            Dispose();
+        }
+
         public virtual void Dispose()
         {
+            if ( disposed ) return;
+
             Callbacks.Clear();
 
             foreach ( var h in CallbackHandles )
@@ -81,6 +89,7 @@ namespace Facepunch.Steamworks
 
             System.Environment.SetEnvironmentVariable("SteamAppId", null );
             System.Environment.SetEnvironmentVariable("SteamGameId", null );
+            disposed = true;
         }
 
         protected void SetupCommonInterfaces()
@@ -119,8 +128,6 @@ namespace Facepunch.Steamworks
 
         public virtual void Update()
         {
-            Inventory.Update();
-
             Networking.Update();
 
             RunUpdateCallbacks();
@@ -138,6 +145,13 @@ namespace Facepunch.Steamworks
             {
                 CallResults[i].Try();
             }
+
+            //
+            // The SourceServerQuery's happen in another thread, so we 
+            // query them to see if they're finished, and if so post a callback
+            // in our main thread. This will all suck less once we have async.
+            //
+            Facepunch.Steamworks.SourceServerQuery.Cycle();
         }
 
         /// <summary>
@@ -159,6 +173,11 @@ namespace Facepunch.Steamworks
 #endif
             }
         }
+
+        /// <summary>
+        /// Debug function, called for every callback. Only really used to confirm that callbacks are working properly.
+        /// </summary>
+        public Action<object> OnAnyCallback;
 
         Dictionary<Type, List<Action<object>>> Callbacks = new Dictionary<Type, List<Action<object>>>();
 
@@ -182,6 +201,11 @@ namespace Facepunch.Steamworks
             foreach ( var i in list )
             {
                 i( data );
+            }
+
+            if ( OnAnyCallback != null )
+            {
+                OnAnyCallback.Invoke( data );
             }
         }
 
